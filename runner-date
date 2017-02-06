@@ -1,0 +1,193 @@
+#!/bin/bash
+# runner-date [FLAGS] START-DATE END-DATE COMMAND ARGS
+#
+# Where flags can be one of:
+#   -s|--silent : Disables script-generated output
+#   -f|--format : Specify date format in printf format (Default: %d-%02d-%02d)
+#
+# ARGS can contain the special token %date% which will be replaced with
+#   the current day iteration. Example: 2014-05-23
+#
+# Changelog:
+#  - v2.2.2 - Removed debugging echo
+#  - v2.2.1 - Fixed bug handling ARGS that started with '-'
+#  - v2.2.0 - Added -f|--format parameter to control %date% format
+#  - v2.1.1 - Added -s|--silent flag to squelch output
+#  - v2.1.0 - Wrapped script in bash CLI template
+#  - v2.0.0 - Reordered arguments
+#  - v1.0.0 - Changed how script functioned: now handles the actual date loops
+#  - v0.0.1 - Initial release. Basic functionality for snowball project
+###############################################################################
+# Get command info
+CMD_PWD=$(pwd)
+CMD="$0"
+CMD_DIR="$(cd "$(dirname "$CMD")" && pwd -P)"
+
+# Defaults and command line options
+[ "$VERBOSE" ]  ||  VERBOSE=
+[ "$DEBUG" ]    ||  DEBUG=
+[ "$SILENT" ]   ||  SILENT=
+
+# Basic helpers
+out() { [ "$SILENT" ] || echo "$(date '+%Y-%m-%d %T %Z'): $*"; }
+err() { out "$*" 1>&2; }
+vrb() { [ ! "$VERBOSE" ] || out "$@"; }
+dbg() { [ ! "$DEBUG" ] || err "$@"; }
+die() { err "EXIT: $1" && [ "$2" ] && [ "$2" -ge 0 ] && exit "$2" || exit 1; }
+usage() { [ "$0" = "bash" ] || sed '2,/^##/p;d' "$0"; echo "$*"; exit 1; }
+
+[ "$DEBUG" ]  &&  set -x
+
+###############################################################################
+
+# Validate some things
+[ "$1" = "--help" -o "$1" = "-h" ]  &&  usage ""
+
+out "$0 version 2.2.2 starting"
+
+# Variables
+START_DATE=""
+start_year=""
+start_month=""
+start_day=""
+
+END_DATE=""
+end_year=""
+end_month=""
+end_day=""
+
+SCRIPT=""
+ARGS=""
+
+FORMAT="%d-%02d-%02d"
+
+while [ $# -gt 0 ] ; do
+  case "$1" in
+  -h|--help)
+    usage ""
+    ;;
+  -s|--silent)
+    SILENT=true
+    ;;
+  -f|--format)
+    FORMAT="$2"
+    shift
+    ;;
+# Disabling this catch-all for '-*'
+#  -*)
+#    usage "Unknown option '$1'"
+#    ;;
+  *)
+    if [ -z "$START_DATE" ]; then
+      START_DATE="$1"
+      start_arr=( ${START_DATE//-/ } )
+      start_year=${start_arr[0]}
+      start_month=$(( 10#${start_arr[1]} ))
+      start_day=$(( 10#${start_arr[2]} ))
+      vrb "START_DATE  set to [${1}]"
+      vrb "start_year  set to [${start_year}]"
+      vrb "start_month set to [${start_month}]"
+      vrb "start_day   set to [${start_day}]"
+    elif [ -z "$END_DATE" ]; then
+      END_DATE="$1"
+      end_arr=( ${END_DATE//-/ } )
+      end_year=${end_arr[0]}
+      end_month=$(( 10#${end_arr[1]} ))
+      end_day=$(( 10#${end_arr[2]} ))
+      vrb "END_DATE  set to [${1}]"
+      vrb "end_year  set to [${end_year}]"
+      vrb "end_month set to [${end_month}]"
+      vrb "end_day   set to [${end_day}]"
+    elif [ -z "$SCRIPT" ]; then
+      SCRIPT="$1"
+      vrb "SCRIPT set to [${SCRIPT}]"
+    elif [ -z "$ARGS" ]; then
+      ARGS="$*"
+      vrb "ARGS set to [${ARGS}]"
+      token_count=$(echo $ARGS | tr -d -C ' ' | wc -c)
+      args=$(($token_count+1))
+      shift $args
+    else
+      usage "Too many arguments"
+    fi
+    ;;
+  esac
+  shift
+done
+
+if [ -z "$ARGS" ] ; then
+    usage "Not enough arguments"
+fi
+
+###############################################################################
+
+year=$start_year
+month=$start_month
+day=$start_day
+
+start=$SECONDS
+
+while [ $year -le $end_year ]; do
+  while [ $month -le 12 ]; do
+    if (( $month == 1 )); then
+      days=31
+    elif (( $month == 2 )); then
+      if (( $year % 4 )); then
+        days=28
+      elif ! (( $year % 100 )); then
+        if ! (( $year % 400 )); then
+          days=29
+          out "NOTICE: $year is a leap year. Feb has 29 days."
+        else
+          days=28
+        fi
+      else
+        days=29
+        out "NOTICE: $year is a leap year. Feb has 29 days."
+      fi
+    elif (( $month == 3 )); then
+      days=31
+    elif (( $month == 4 )); then
+      days=30
+    elif (( $month == 5 )); then
+      days=31
+    elif (( $month == 6 )); then
+      days=30
+    elif (( $month == 7 )); then
+      days=31
+    elif (( $month == 8 )); then
+      days=31
+    elif (( $month == 9 )); then
+      days=30
+    elif (( $month == 10 )); then
+      days=31
+    elif (( $month == 11 )); then
+      days=30
+    elif (( $month == 12 )); then
+      days=31
+    else
+      days=31
+    fi
+    while [ $day -le $days ]; do
+      ymd=$(printf '%d-%02d-%02d' $year $month $day)
+      ymdf=$(printf "$FORMAT" $year $month $day)
+      vrb "Processing date: [${ymd}]"
+      ARGS_TREATED=${ARGS//%date%/$ymdf}
+      vrb "Running: [${SCRIPT} ${ARGS_TREATED}]"
+      ${SCRIPT} ${ARGS_TREATED}
+
+      if [ "$ymd" == "$END_DATE" ]; then
+        vrb "Ending on: [${END_DATE}]"
+        break 3
+      fi
+      day=$(($day+1))
+    done
+    day=1
+    month=$(($month+1))
+  done
+  month=1
+  year=$(($year+1))
+done
+
+duration=$(( $SECONDS-$start ))
+out "Elapsed loop time: [${duration}] seconds"
